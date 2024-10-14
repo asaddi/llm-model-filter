@@ -72,6 +72,9 @@ class ListModelsResponse(BaseModel):
     data: List[Model]
 
 
+DEFAULT_CONFIG = 'config.yaml'
+
+
 # Our global variables
 CONFIG: ModelFilterConfig|None = None
 CLIENT: ClientSession|None = None
@@ -81,10 +84,10 @@ CLIENT: ClientSession|None = None
 async def setup_teardown(_):
     global CONFIG, CLIENT
 
-    config_file = os.getenv('CONFIG_FILE', 'config.yaml')
+    config_file = os.getenv('LLM_MF_CONFIG', DEFAULT_CONFIG)
 
-    if config_file == 'config.yaml' and not os.path.exists(config_file):
-        config_file = 'config.yaml.default'
+    if config_file == DEFAULT_CONFIG and not os.path.exists(config_file):
+        config_file = os.path.join(os.path.dirname(__file__), 'config.yaml.default')
 
     logger.info(f'Reading configuration from {config_file}')
 
@@ -271,31 +274,35 @@ async def list_models(authorization: Annotated[str|None, Header()]=None) -> List
 
 
 def main():
+    config_file = os.getenv('LLM_MF_CONFIG', DEFAULT_CONFIG)
+    host = os.getenv('LLM_MF_HOST', '127.0.0.1')
+    port = int(os.getenv('LLM_MF_PORT', 8080))
+
     parser = argparse.ArgumentParser('OpenAI-compatible API model filter proxy')
 
     parser.add_argument(
         '-c', '--config',
         type=str,
-        default=None,
-        help='Configuration file to use'
+        default=config_file,
+        help=f'Configuration file to use (default: {config_file})'
     )
     parser.add_argument(
         '-H', '--host',
-        default='0.0.0.0',
-        help='Host interface to listen on'
+        type=str,
+        default=host,
+        help=f'Host interface to listen on (default: {host})'
     )
     parser.add_argument(
         '-p', '--port',
         type=int,
-        default=8080,
-        help='Port to listen on'
+        default=port,
+        help=f'Port to listen on (default: {port})'
     )
 
     args = parser.parse_args()
 
-    if args.config is not None:
-        # Why are we passing this through environment again?
-        os.environ['CONFIG_FILE'] = args.config
+    # Why are we passing this through environment again?
+    os.environ['LLM_MF_CONFIG'] = args.config
 
     uvicorn.run(
         app,
