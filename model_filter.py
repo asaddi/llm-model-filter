@@ -3,10 +3,10 @@ from enum import Enum
 import os
 # from pprint import pprint
 import re
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Annotated, Any, AsyncGenerator, List, Optional
 
 from aiohttp import ClientResponse, ClientSession
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import yaml
@@ -14,7 +14,6 @@ import yaml
 
 class ModelFilterConfig(BaseModel):
     base_url: str
-    api_key: Optional[str]=None
     case_sensitive: Optional[bool]=False
     regexp: Optional[list[str]]=None
     simple: Optional[list[str]]=None
@@ -73,16 +72,7 @@ async def setup_teardown(_):
 
     CONFIG.base_url = CONFIG.base_url.rstrip('/')
 
-    # Resolve api_key from environment variable, if necessary
-    api_key = CONFIG.api_key
-    if api_key is not None:
-        prefix = 'os.environ/'
-        if api_key.startswith(prefix):
-            api_key = os.environ[api_key[prefix:]]
-
-    headers = None if api_key is None else \
-        { 'Authorization': f'Bearer {api_key}'}
-    CLIENT = ClientSession(headers=headers)
+    CLIENT = ClientSession()
     try:
         yield
     finally:
@@ -105,6 +95,11 @@ async def LineCopyStreamer(resp: ClientResponse) -> AsyncGenerator[Any, Any]:
         resp.close()
 
 
+def resolve_authorization(authorization: str|None) -> dict|None:
+    return None if authorization is None else \
+        { 'Authorization': authorization }
+
+
 def resolve_endpoint(endpoint: str) -> str:
     assert CONFIG is not None
 
@@ -114,7 +109,7 @@ def resolve_endpoint(endpoint: str) -> str:
     return CONFIG.base_url+endpoint
 
 
-async def streaming_aware_proxy(request: Request, endpoint: str):
+async def streaming_aware_proxy(request: Request, endpoint: str, authorization: str|None=None):
     """
     Proxy a potential SSE-streaming request to another URL.
 
@@ -129,7 +124,11 @@ async def streaming_aware_proxy(request: Request, endpoint: str):
     req_body = await request.json()
     # pprint(req_body)
 
-    resp = await CLIENT.request('POST', resolve_endpoint(endpoint), json=req_body)
+    resp = await CLIENT.request(
+        'POST', resolve_endpoint(endpoint),
+        json=req_body,
+        headers=resolve_authorization(authorization),
+    )
 
     if not req_body.get('stream', False):
         # No streaming. Wait for JSON response and be on our way.
@@ -143,7 +142,7 @@ async def streaming_aware_proxy(request: Request, endpoint: str):
     )
 
 
-async def simple_proxy(request: Request, endpoint: str):
+async def simple_proxy(request: Request, endpoint: str, authorization: str|None=None):
     """
     Proxy a simple request (JSON-in -> JSON-out) to another URL.
     """
@@ -152,32 +151,36 @@ async def simple_proxy(request: Request, endpoint: str):
     req_body = await request.json()
     # pprint(req_body)
 
-    async with CLIENT.request('POST', resolve_endpoint(endpoint), json=req_body) as resp:
+    async with CLIENT.request(
+        'POST', resolve_endpoint(endpoint),
+        json=req_body,
+        headers=resolve_authorization(authorization),
+    ) as resp:
         return await resp.json()
 
 
 @app.post('/v1/completions')
-async def create_completion(request: Request):
+async def create_completion(request: Request, authorization: Annotated[str|None, Header()]=None):
     """
     Creates a completion for the provided prompt and parameters.
     """
-    return await streaming_aware_proxy(request, '/v1/completions')
+    return await streaming_aware_proxy(request, '/v1/completions', authorization=authorization)
 
 
 @app.post('/v1/chat/completions')
-async def create_chat_completion(request: Request):
+async def create_chat_completion(request: Request, authorization: Annotated[str|None, Header()]=None):
     """
     Creates a model response for the given chat conversation.
     """
-    return await streaming_aware_proxy(request, '/v1/chat/completions')
+    return await streaming_aware_proxy(request, '/v1/chat/completions', authorization=authorization)
 
 
 @app.post('/v1/embeddings')
-async def create_embedding(request: Request):
+async def create_embedding(request: Request, authorization: Annotated[str|None, Header()]=None):
     """
     Creates an embedding vector representing the input text.
     """
-    return await simple_proxy(request, '/v1/embeddings')
+    return await simple_proxy(request, '/v1/embeddings', authorization=authorization)
 
 
 def model_selected(model: Model) -> bool:
@@ -215,13 +218,16 @@ def model_selected(model: Model) -> bool:
 
 
 @app.get('/v1/models', response_model=ListModelsResponse)
-async def list_models() -> ListModelsResponse:
+async def list_models(authorization: Annotated[str|None, Header()]=None) -> ListModelsResponse:
     """
     Lists the currently available models, and provides basic information about each one such as the owner and availability.
     """
     assert CLIENT is not None
 
-    async with CLIENT.request('GET', resolve_endpoint('/v1/models')) as resp:
+    async with CLIENT.request(
+        'GET', resolve_endpoint('/v1/models'),
+        headers=resolve_authorization(authorization),
+    ) as resp:
         resp_json = await resp.json()
     resp_models = ListModelsResponse.model_validate(resp_json)
 
