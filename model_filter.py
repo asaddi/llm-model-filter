@@ -157,7 +157,7 @@ async def streaming_aware_proxy(request: Request, endpoint: str, authorization: 
     If 'stream' is `False` or not present in the request body, then a simple
     proxy request is performed (JSON-in -> JSON-out).
 
-    Otherwise, Server Side Events are streamed line-by-line from target URL
+    Otherwise, Server Sent Events are streamed line-by-line from target URL
     to client.
     """
     assert CLIENT is not None
@@ -172,9 +172,11 @@ async def streaming_aware_proxy(request: Request, endpoint: str, authorization: 
     )
 
     if not req_body.get('stream', False):
-        # No streaming. Wait for JSON response and be on our way.
-        resp_json = await resp.json()
-        resp.close()
+        try:
+            # No streaming. Wait for JSON response and be on our way.
+            resp_json = await resp.json()
+        finally:
+            resp.close()
         return resp_json
 
     return StreamingResponse(
