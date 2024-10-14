@@ -19,8 +19,8 @@ An alternative is to use something like [LiteLLM](https://github.com/BerriAI/lit
 * [x] `/v1/chat/completions` and `/v1/completions` endpoints are proxied, supporting streaming and non-streaming requests
 * [x] `/v1/embeddings` is proxied
 * [x] If present, the `Authorization` header (which contains your API key), is simply passed through to the proxied service
-* [x] Simple TTL caching of `/v1/models`
-* [ ] Dockerfile
+* [x] Simple TTL caching of filtered `/v1/models` output
+* [x] Dockerfile
 * [ ] Robustness. I know failing authorization simply leaves the client in the dark with a generic 5xx error. Would be better if the proxy's endpoint simply mirrored the HTTP status code/message of the underlying service.
 
 ### Future?
