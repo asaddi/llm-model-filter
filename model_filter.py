@@ -62,13 +62,13 @@ class Model(BaseModel):
         ..., description='The Unix timestamp (in seconds) when the model was created.'
     )
     object: ObjectModel = Field(
-        ..., description='The object type, which is always "model".'
+        default=ObjectModel.model, description='The object type, which is always "model".'
     )
-    owned_by: str = Field(..., description='The organization that owns the model.')
+    owned_by: str = Field(default='unknown', description='The organization that owns the model.')
 
 
 class ListModelsResponse(BaseModel):
-    object: ObjectList
+    object: ObjectList = ObjectList.list
     data: List[Model]
 
 
