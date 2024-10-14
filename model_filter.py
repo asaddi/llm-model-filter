@@ -207,7 +207,7 @@ async def create_completion(request: Request, authorization: Annotated[str|None,
     """
     Creates a completion for the provided prompt and parameters.
     """
-    return await streaming_aware_proxy(request, '/v1/completions', authorization=authorization)
+    return await streaming_aware_proxy(request, '/completions', authorization=authorization)
 
 
 @app.post('/v1/chat/completions')
@@ -215,7 +215,7 @@ async def create_chat_completion(request: Request, authorization: Annotated[str|
     """
     Creates a model response for the given chat conversation.
     """
-    return await streaming_aware_proxy(request, '/v1/chat/completions', authorization=authorization)
+    return await streaming_aware_proxy(request, '/chat/completions', authorization=authorization)
 
 
 @app.post('/v1/embeddings')
@@ -223,7 +223,7 @@ async def create_embedding(request: Request, authorization: Annotated[str|None, 
     """
     Creates an embedding vector representing the input text.
     """
-    return await simple_proxy(request, '/v1/embeddings', authorization=authorization)
+    return await simple_proxy(request, '/embeddings', authorization=authorization)
 
 
 def model_selected(model: Model) -> bool:
@@ -277,7 +277,7 @@ async def _list_models(authorization: str|None) -> ListModelsResponse:
     assert CLIENT is not None
 
     async with CLIENT.request(
-        'GET', resolve_endpoint('/v1/models'),
+        'GET', resolve_endpoint('/models'),
         headers=resolve_authorization(authorization),
     ) as resp:
         resp_json = await resp.json()

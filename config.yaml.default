@@ -1,8 +1,8 @@
 model_filter:
   # Base URL of underlying OpenAI-like server
-  # NB Should not include "/v1/etc."
+  # NB It *should* include "/v1"
   # Also don't include trailing slash
-  base_url: http://localhost:8080
+  base_url: http://localhost:8080/v1
 
   # Cache results for this many seconds
   # By default, no caching is done
