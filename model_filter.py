@@ -1,5 +1,7 @@
+import argparse
 from contextlib import asynccontextmanager
 from enum import Enum
+import logging
 import os
 # from pprint import pprint
 import re
@@ -9,7 +11,13 @@ from aiohttp import ClientResponse, ClientSession
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+import uvicorn
 import yaml
+
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('model_filter')
 
 
 class ModelFilterConfig(BaseModel):
@@ -64,6 +72,8 @@ async def setup_teardown(_):
     if config_file == 'config.yaml' and not os.path.exists(config_file):
         config_file = 'config.yaml.default'
 
+    logger.info(f'Reading configuration from {config_file}')
+
     with open(config_file) as inp:
         config = yaml.load(inp, yaml.Loader)
 
@@ -79,6 +89,7 @@ async def setup_teardown(_):
         await CLIENT.close()
 
 
+# The main application object
 app = FastAPI(title='OpenAI-compatible API model filter proxy', lifespan=setup_teardown)
 
 
@@ -243,3 +254,41 @@ async def list_models(authorization: Annotated[str|None, Header()]=None) -> List
     )
 
 # TODO Do typical frontends use the other model endpoints?
+
+
+def main():
+    parser = argparse.ArgumentParser('OpenAI-compatible API model filter proxy')
+
+    parser.add_argument(
+        '-c', '--config',
+        type=str,
+        default=None,
+        help='Configuration file to use'
+    )
+    parser.add_argument(
+        '-H', '--host',
+        default='0.0.0.0',
+        help='Host interface to listen on'
+    )
+    parser.add_argument(
+        '-p', '--port',
+        type=int,
+        default=8080,
+        help='Port to listen on'
+    )
+
+    args = parser.parse_args()
+
+    if args.config is not None:
+        # Why are we passing this through environment again?
+        os.environ['CONFIG_FILE'] = args.config
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+    )
+
+
+if __name__ == '__main__':
+    main()
