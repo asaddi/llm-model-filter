@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 from enum import Enum
-from pprint import pprint
-from typing import Any, AsyncGenerator, List
+import os
+# from pprint import pprint
+import re
+from typing import Any, AsyncGenerator, List, Optional
 
 from aiohttp import ClientResponse, ClientSession
 from fastapi import FastAPI, Request
@@ -9,6 +11,18 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import yaml
 
+
+class ModelFilterConfig(BaseModel):
+    base_url: str
+    api_key: Optional[str]=None
+    case_sensitive: Optional[bool]=False
+    regexp: Optional[list[str]]=None
+    simple: Optional[list[str]]=None
+
+
+# pydantic models for OpenAI API
+# Since we're only parsing/modifying /v1/models, we don't care about all the
+# other models (ChatCompletionRequest, etc.)
 
 class ObjectList(Enum):
     list = 'list'
@@ -37,17 +51,27 @@ class ListModelsResponse(BaseModel):
     data: List[Model]
 
 
-TARGET = 'http://localhost:8080'
-
-
+# Our global variables
+CONFIG: ModelFilterConfig|None = None
 CLIENT: ClientSession|None = None
 
 
 @asynccontextmanager
 async def setup_teardown(_):
-    global CLIENT
+    global CONFIG, CLIENT
 
-    CLIENT = ClientSession(base_url=TARGET)
+    config_file = os.getenv('CONFIG_FILE', 'config.yaml')
+
+    if config_file == 'config.yaml' and not os.path.exists(config_file):
+        config_file = 'config.yaml.default'
+
+    with open(config_file) as inp:
+        config = yaml.load(inp, yaml.Loader)
+
+    CONFIG = ModelFilterConfig.model_validate(config['model_filter'])
+    # pprint(CONFIG)
+
+    CLIENT = ClientSession(base_url=CONFIG.base_url)
     try:
         yield
     finally:
@@ -58,6 +82,9 @@ app = FastAPI(title='OpenAI-compatible API model filter proxy', lifespan=setup_t
 
 
 async def LineCopyStreamer(resp: ClientResponse) -> AsyncGenerator[Any, Any]:
+    """
+    Simply yields HTTP response one line at a time. Should work with SSE.
+    """
     try:
         while True:
             line = await resp.content.readline()
@@ -80,17 +107,18 @@ async def streaming_aware_proxy(request: Request, endpoint: str):
     assert CLIENT is not None
 
     req_body = await request.json()
-    pprint(req_body)
+    # pprint(req_body)
 
     resp = await CLIENT.request('POST', endpoint, json=req_body)
 
     if not req_body.get('stream', False):
+        # No streaming. Wait for JSON response and be on our way.
         resp_json = await resp.json()
         resp.close()
         return resp_json
 
     return StreamingResponse(
-        LineCopyStreamer(resp),
+        LineCopyStreamer(resp), # NB This will close resp once done
         media_type="text/event-stream",
     )
 
@@ -102,7 +130,7 @@ async def simple_proxy(request: Request, endpoint: str):
     assert CLIENT is not None
 
     req_body = await request.json()
-    pprint(req_body)
+    # pprint(req_body)
 
     async with CLIENT.request('POST', endpoint, json=req_body) as resp:
         return await resp.json()
@@ -132,6 +160,40 @@ async def create_embedding(request: Request):
     return await simple_proxy(request, '/v1/embeddings')
 
 
+def model_selected(model: Model) -> bool:
+    """
+    Returns `True` if the model is selected by our configuration.
+    """
+    assert CONFIG is not None
+
+    # If the user didn't configure anything, pass it all
+    if CONFIG.regexp is None and CONFIG.simple is None:
+        return True
+
+    mid = model.id
+
+    if not CONFIG.case_sensitive:
+        mid = mid.lower()
+
+    if CONFIG.simple is not None:
+        # TODO Cache?
+        simple_list = CONFIG.simple if CONFIG.case_sensitive else \
+            [ s.lower() for s in CONFIG.simple ]
+
+        if mid in simple_list:
+            return True
+
+    # TODO optimize this, maybe by caching compiled REs?
+    # Or does it matter?
+    if CONFIG.regexp is not None:
+        flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
+        for rexp in CONFIG.regexp:
+            if re.fullmatch(rexp, mid, flags=flags) is not None:
+                return True
+
+    return False
+
+
 @app.get('/v1/models', response_model=ListModelsResponse)
 async def list_models() -> ListModelsResponse:
     """
@@ -143,6 +205,15 @@ async def list_models() -> ListModelsResponse:
         resp_json = await resp.json()
     resp_models = ListModelsResponse.model_validate(resp_json)
 
-    # TODO filter the models
+    # Filter the models
+    filtered_models = []
+    for m in resp_models.data:
+        if model_selected(m):
+            filtered_models.append(m)
 
-    return resp_models
+    return ListModelsResponse(
+        object=ObjectList.list,
+        data=filtered_models,
+    )
+
+# TODO Do typical frontends use the other model endpoints?
