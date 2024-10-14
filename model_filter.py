@@ -14,6 +14,7 @@
 
 import argparse
 from contextlib import asynccontextmanager
+import datetime
 from enum import Enum
 import logging
 import os
@@ -36,6 +37,7 @@ logger = logging.getLogger('model_filter')
 
 class ModelFilterConfig(BaseModel):
     base_url: str
+    cache_ttl: Optional[int]=None
     case_sensitive: Optional[bool]=False
     regexp: Optional[list[str]]=None
     simple: Optional[list[str]]=None
@@ -247,11 +249,29 @@ def model_selected(model: Model) -> bool:
     return False
 
 
-@app.get('/v1/models', response_model=ListModelsResponse)
-async def list_models(authorization: Annotated[str|None, Header()]=None) -> ListModelsResponse:
-    """
-    Lists the currently available models, and provides basic information about each one such as the owner and availability.
-    """
+class SimpleTTLCache:
+    _last_result: Any = None
+    _last_time: datetime.datetime|None = None
+
+    async def get(self, func, *args, **kwargs):
+        ttl = None if CONFIG.cache_ttl is None else \
+            datetime.timedelta(seconds=CONFIG.cache_ttl)
+
+        now = datetime.datetime.now()
+
+        if (ttl is None or
+            self._last_time is None or
+            (now - self._last_time) > ttl):
+            logger.info(f'Cache miss: {func.__name__}')
+            self._last_result = await func(*args, **kwargs)
+            self._last_time = now
+        else:
+            logger.info(f'Cache hit: {func.__name__}')
+
+        return self._last_result.copy()
+
+
+async def _list_models(authorization: str|None) -> ListModelsResponse:
     assert CLIENT is not None
 
     async with CLIENT.request(
@@ -271,6 +291,17 @@ async def list_models(authorization: Annotated[str|None, Header()]=None) -> List
         object=ObjectList.list,
         data=filtered_models,
     )
+
+
+MODELS_CACHE = SimpleTTLCache()
+
+
+@app.get('/v1/models', response_model=ListModelsResponse)
+async def list_models(authorization: Annotated[str|None, Header()]=None) -> ListModelsResponse:
+    """
+    Lists the currently available models, and provides basic information about each one such as the owner and availability.
+    """
+    return await MODELS_CACHE.get(_list_models, authorization)
 
 # TODO Do typical frontends use the other model endpoints?
 

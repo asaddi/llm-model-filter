@@ -1,4 +1,23 @@
 model_filter:
+  # Base URL of underlying OpenAI-like server
+  # NB Should not include "/v1/etc."
+  # Also don't include trailing slash
   base_url: http://localhost:8080
+
+  # Cache results for this many seconds
+  # By default, no caching is done
+  cache_ttl: 900
+
+  # Set case sensitivity
+  # Defaults to false
+  # This applies to both regexp and simple matching
+  case_sensitive: false
+
+  # Python regexp matching
+  # NB The pattern has to match the entire name from beginning to end
   regexp:
     - ".*llama.*"
+
+  # Exact name matching
+  simple:
+    - "some_other_model"
