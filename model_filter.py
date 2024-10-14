@@ -78,11 +78,14 @@ DEFAULT_CONFIG = 'config.yaml'
 # Our global variables
 CONFIG: ModelFilterConfig|None = None
 CLIENT: ClientSession|None = None
+SIMPLE_FILTERS: list[str] = []
+RE_FILTERS: list[re.Pattern] = []
 
 
 @asynccontextmanager
 async def setup_teardown(_):
     global CONFIG, CLIENT
+    global SIMPLE_FILTERS, RE_FILTERS
 
     config_file = os.getenv('LLM_MF_CONFIG', DEFAULT_CONFIG)
 
@@ -98,6 +101,14 @@ async def setup_teardown(_):
     # pprint(CONFIG)
 
     CONFIG.base_url = CONFIG.base_url.rstrip('/')
+
+    if CONFIG.simple is not None:
+        SIMPLE_FILTERS = CONFIG.simple if CONFIG.case_sensitive else \
+            [s.lower() for s in CONFIG.simple]
+
+    if CONFIG.regexp is not None:
+        flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
+        RE_FILTERS = [re.compile(p, flags=flags) for p in CONFIG.regexp]
 
     CLIENT = ClientSession()
     try:
@@ -226,21 +237,12 @@ def model_selected(model: Model) -> bool:
     if not CONFIG.case_sensitive:
         mid = mid.lower()
 
-    if CONFIG.simple is not None:
-        # TODO Cache?
-        simple_list = CONFIG.simple if CONFIG.case_sensitive else \
-            [ s.lower() for s in CONFIG.simple ]
+    if mid in SIMPLE_FILTERS:
+        return True
 
-        if mid in simple_list:
+    for rexp in RE_FILTERS:
+        if rexp.fullmatch(mid) is not None:
             return True
-
-    # TODO optimize this, maybe by caching compiled REs?
-    # Or does it matter?
-    if CONFIG.regexp is not None:
-        flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
-        for rexp in CONFIG.regexp:
-            if re.fullmatch(rexp, mid, flags=flags) is not None:
-                return True
 
     return False
 
