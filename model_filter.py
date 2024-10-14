@@ -71,7 +71,18 @@ async def setup_teardown(_):
     CONFIG = ModelFilterConfig.model_validate(config['model_filter'])
     # pprint(CONFIG)
 
-    CLIENT = ClientSession(base_url=CONFIG.base_url)
+    CONFIG.base_url = CONFIG.base_url.rstrip('/')
+
+    # Resolve api_key from environment variable, if necessary
+    api_key = CONFIG.api_key
+    if api_key is not None:
+        prefix = 'os.environ/'
+        if api_key.startswith(prefix):
+            api_key = os.environ[api_key[prefix:]]
+
+    headers = None if api_key is None else \
+        { 'Authorization': f'Bearer {api_key}'}
+    CLIENT = ClientSession(headers=headers)
     try:
         yield
     finally:
@@ -94,6 +105,15 @@ async def LineCopyStreamer(resp: ClientResponse) -> AsyncGenerator[Any, Any]:
         resp.close()
 
 
+def resolve_endpoint(endpoint: str) -> str:
+    assert CONFIG is not None
+
+    # Can't use urljoin because it gets rid of everything after the host/port.
+    # Need to do a simple append.
+    # Need to right-strip slashes elsewhere.
+    return CONFIG.base_url+endpoint
+
+
 async def streaming_aware_proxy(request: Request, endpoint: str):
     """
     Proxy a potential SSE-streaming request to another URL.
@@ -109,7 +129,7 @@ async def streaming_aware_proxy(request: Request, endpoint: str):
     req_body = await request.json()
     # pprint(req_body)
 
-    resp = await CLIENT.request('POST', endpoint, json=req_body)
+    resp = await CLIENT.request('POST', resolve_endpoint(endpoint), json=req_body)
 
     if not req_body.get('stream', False):
         # No streaming. Wait for JSON response and be on our way.
@@ -132,7 +152,7 @@ async def simple_proxy(request: Request, endpoint: str):
     req_body = await request.json()
     # pprint(req_body)
 
-    async with CLIENT.request('POST', endpoint, json=req_body) as resp:
+    async with CLIENT.request('POST', resolve_endpoint(endpoint), json=req_body) as resp:
         return await resp.json()
 
 
@@ -201,7 +221,7 @@ async def list_models() -> ListModelsResponse:
     """
     assert CLIENT is not None
 
-    async with CLIENT.request('GET', '/v1/models') as resp:
+    async with CLIENT.request('GET', resolve_endpoint('/v1/models')) as resp:
         resp_json = await resp.json()
     resp_models = ListModelsResponse.model_validate(resp_json)
 
