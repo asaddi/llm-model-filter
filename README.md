@@ -68,7 +68,7 @@ model_filter:
 
 All matching models will then be prefixed with `my_arbitrary_prefix/`, e.g. `my_arbitrary_prefix/some_model`
 
-The proxied endpoints `/v1/chat/completions`, `/v1/completions`, and `/v1/embeddings` expect the received `model` parameter to be prefixed in a similar manner. (But it won't be the end of the world if it isn't. Just bear in mind routing decisions may be based off the prefix and `model` params that lack a prefix will be unroutable...)
+The proxied endpoints `/v1/chat/completions`, `/v1/completions`, and `/v1/embeddings` expect the received `model` parameter to be prefixed in a similar manner. (But it won't be the end of the world if it isn't. Just bear in mind routing decisions may be based off the prefix in the future and `model` params that lack a prefix will be unroutable...)
 
 ## License
 
