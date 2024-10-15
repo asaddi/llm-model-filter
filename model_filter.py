@@ -80,6 +80,7 @@ DEFAULT_CONFIG = 'config.yaml'
 # Our global variables
 CONFIG: ModelFilterConfig|None = None
 CLIENT: ClientSession|None = None
+CONFIG_PREFIX: str = ''
 SIMPLE_FILTERS: list[str] = []
 RE_FILTERS: list[re.Pattern] = []
 
@@ -87,7 +88,7 @@ RE_FILTERS: list[re.Pattern] = []
 @asynccontextmanager
 async def setup_teardown(_):
     global CONFIG, CLIENT
-    global SIMPLE_FILTERS, RE_FILTERS
+    global CONFIG_PREFIX, SIMPLE_FILTERS, RE_FILTERS
 
     config_file = os.getenv('LLM_MF_CONFIG', DEFAULT_CONFIG)
 
@@ -99,7 +100,23 @@ async def setup_teardown(_):
     with open(config_file) as inp:
         config = yaml.load(inp, yaml.Loader)
 
-    CONFIG = ModelFilterConfig.model_validate(config['model_filter'])
+    config = config['model_filter']
+    # Quick check to see if there's a prefix
+    if 'base_url' in config:
+        # Defined at top level, no prefix
+        CONFIG_PREFIX = ''
+    else:
+        # The key is the prefix
+        keys = list(config.keys())
+        if len(keys) > 1:
+            raise ValueError('Currently, only a single prefix is supported. Sorry!')
+        CONFIG_PREFIX = keys[0] + '/'
+        config = config[keys[0]]
+
+    logger.info(f'Config prefix = {repr(CONFIG_PREFIX)}')
+
+    CONFIG = ModelFilterConfig.model_validate(config)
+
     # pprint(CONFIG)
 
     CONFIG.base_url = CONFIG.base_url.rstrip('/')
@@ -136,6 +153,13 @@ async def LineCopyStreamer(resp: ClientResponse) -> AsyncGenerator[Any, Any]:
         resp.close()
 
 
+def resolve_model(model: str) -> str:
+    if model.startswith(CONFIG_PREFIX):
+        return model[len(CONFIG_PREFIX):]
+    logger.warning(f'Endpoint received model {repr(model)} which has no matching prefix')
+    return model
+
+
 def resolve_authorization(authorization: str|None) -> dict|None:
     return None if authorization is None else \
         { 'Authorization': authorization }
@@ -164,6 +188,9 @@ async def streaming_aware_proxy(request: Request, endpoint: str, authorization: 
 
     req_body = await request.json()
     # pprint(req_body)
+    if (model := req_body.get('model', None)) is not None:
+        # In the future, this might influence routing
+        req_body['model'] = resolve_model(model)
 
     resp = await CLIENT.request(
         'POST', resolve_endpoint(endpoint),
@@ -193,6 +220,9 @@ async def simple_proxy(request: Request, endpoint: str, authorization: str|None=
 
     req_body = await request.json()
     # pprint(req_body)
+    if (model := req_body.get('model', None)) is not None:
+        # In the future, this might influence routing
+        req_body['model'] = resolve_model(model)
 
     async with CLIENT.request(
         'POST', resolve_endpoint(endpoint),
@@ -224,6 +254,13 @@ async def create_embedding(request: Request, authorization: Annotated[str|None, 
     Creates an embedding vector representing the input text.
     """
     return await simple_proxy(request, '/embeddings', authorization=authorization)
+
+
+def mangle_model(model: Model) -> Model:
+    # Simply add the prefix
+    # Right now, there can be 0 or 1 prefixes, so this is easy
+    model.id = CONFIG_PREFIX+model.id
+    return model
 
 
 def model_selected(model: Model) -> bool:
@@ -291,7 +328,7 @@ async def _list_models(authorization: str|None) -> ListModelsResponse:
 
     return ListModelsResponse(
         object=ObjectList.list,
-        data=filtered_models,
+        data=list(map(mangle_model, filtered_models)),
     )
 
 

@@ -16,6 +16,7 @@ An alternative is to use something like [LiteLLM](https://github.com/BerriAI/lit
 
 * [x] Regexp and exact-match filtering of `/v1/models` endpoint
 * [x] Defaults to case-insensitive matching of both regexp and exact-match filters
+* [x] Basic support for prefixing the IDs of the returned models. Sorry, only supports 0 or 1 prefixes, no routing yet!
 * [x] `/v1/chat/completions` and `/v1/completions` endpoints are proxied, supporting streaming and non-streaming requests
 * [x] `/v1/embeddings` is proxied
 * [x] If present, the `Authorization` header (which contains your API key), is simply passed through to the proxied service
@@ -52,6 +53,22 @@ You can set the following environment variables in lieu of CLI arguments:
 CLI arguments (all optional) override environment.
 
     python model_filter.py --config <path/to/config> --host <host> --port <port>
+
+### Prefixes
+
+You can optionally prepend a prefix to all returned model IDs. Put the usual configuration under an additional YAML map key (is that the right terminology?) like so:
+
+```yaml
+model_filter:
+  my_arbitrary_prefix:
+    base_url: http://localhost:8080/v1
+    simple:
+      - "some_model"
+```
+
+All matching models will then be prefixed with `my_arbitrary_prefix/`, e.g. `my_arbitrary_prefix/some_model`
+
+The proxied endpoints `/v1/chat/completions`, `/v1/completions`, and `/v1/embeddings` expect the received `model` parameter to be prefixed in a similar manner. (But it won't be the end of the world if it isn't. Just bear in mind routing decisions may be based off the prefix and `model` params that lack a prefix will be unroutable...)
 
 ## License
 
