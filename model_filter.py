@@ -383,6 +383,7 @@ def main():
     config_file = os.getenv('LLM_MF_CONFIG', DEFAULT_CONFIG)
     host = os.getenv('LLM_MF_HOST', '127.0.0.1')
     port = int(os.getenv('LLM_MF_PORT', 8080))
+    root_path = os.getenv('LLM_MF_ROOT_PATH', '')
 
     parser = argparse.ArgumentParser('OpenAI-compatible API model filter proxy')
 
@@ -404,6 +405,12 @@ def main():
         default=port,
         help=f'Port to listen on (default: {port})'
     )
+    parser.add_argument(
+        '-r', '--root-path',
+        type=str,
+        default=root_path,
+        help=f'(Stripped) path prefix, when behind a proxy (default: {root_path})'
+    )
 
     args = parser.parse_args()
 
@@ -414,6 +421,7 @@ def main():
         app,
         host=args.host,
         port=args.port,
+        root_path=args.root_path,
     )
 
 
