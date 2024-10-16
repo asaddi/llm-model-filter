@@ -289,25 +289,59 @@ def model_selected(model: Model) -> bool:
 
 
 class SimpleTTLCache:
-    _last_result: Any = None
-    _last_time: datetime.datetime|None = None
+    def __init__(self):
+        self._cache = {}
 
     async def get(self, func, *args, **kwargs):
+        # No TTL, don't bother
+        if CONFIG.cache_ttl is None:
+            return func(*args, **kwargs)
+
+        # Create cache key from args and kwargs
+        key = SimpleTTLCache._make_key(args) + SimpleTTLCache._make_key(kwargs)
+
+        # TODO Calling this every time doesn't scale as the cache grows
+        now = self._expire_items()
+
+        if (item := self._cache.get(key, None)) is None:
+            logger.info(f'Cache miss: {func.__name__}')
+
+            result = await func(*args, **kwargs)
+            item = (result, now)
+            self._cache[key] = item
+        else:
+            logger.info(f'Cache hit: {func.__name__}')
+
+        # Should we bother making a copy?
+        return item[0].copy()
+
+    def _expire_items(self) -> datetime.datetime:
+        assert CONFIG is not None
+
+        # Since CONFIG is global, it actually won't be ready when the cache
+        # initializes. Oh well...
         ttl = None if CONFIG.cache_ttl is None else \
             datetime.timedelta(seconds=CONFIG.cache_ttl)
 
         now = datetime.datetime.now()
 
-        if (ttl is None or
-            self._last_time is None or
-            (now - self._last_time) > ttl):
-            logger.info(f'Cache miss: {func.__name__}')
-            self._last_result = await func(*args, **kwargs)
-            self._last_time = now
-        else:
-            logger.info(f'Cache hit: {func.__name__}')
+        items = list(self._cache.items())
+        for key,item in items:
+            if (now - item[1]) > ttl:
+                del self._cache[key]
 
-        return self._last_result.copy()
+        # Return the same "now" for convenience
+        return now
+
+    @staticmethod
+    def _make_key(obj) -> str:
+        _make_key = SimpleTTLCache._make_key
+        if isinstance(obj, tuple):
+            return str([_make_key(x) for x in obj])
+        elif isinstance(obj, dict):
+            return str([_make_key(kv) for kv in obj.items()])
+        else:
+            return str(obj)
 
 
 async def _list_models(authorization: str|None) -> ListModelsResponse:
