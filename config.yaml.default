@@ -8,6 +8,14 @@ model_filter:
   # By default, no caching is done
   cache_ttl: 900
 
+  # Connection timeout in seconds
+  # By default, there is none
+  connection_timeout: 10
+
+  # Maximum time in seconds to wait for a response
+  # By default, around 5 minutes
+  total_timeout: 300
+
   # Set case sensitivity
   # Defaults to false
   # This applies to both regexp and simple matching

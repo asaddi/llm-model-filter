@@ -23,7 +23,7 @@ import os
 import re
 from typing import Annotated, Any, AsyncGenerator, List, Optional
 
-from aiohttp import ClientResponse, ClientSession
+from aiohttp import ClientResponse, ClientSession, ClientTimeout
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -39,6 +39,8 @@ logger = logging.getLogger("model_filter")
 class ModelFilterConfig(BaseModel):
     base_url: str
     cache_ttl: Optional[int] = None
+    connection_timeout: Optional[int] = None
+    total_timeout: Optional[int] = None
     case_sensitive: Optional[bool] = False
     regexp: Optional[list[str]] = None
     simple: Optional[list[str]] = None
@@ -137,7 +139,11 @@ async def setup_teardown(_):
         flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
         RE_FILTERS = [re.compile(p, flags=flags) for p in CONFIG.regexp]
 
-    CLIENT = ClientSession()
+    timeout = ClientTimeout(
+        connect=CONFIG.connection_timeout,
+        total=CONFIG.total_timeout if CONFIG.total_timeout is not None else 300,
+    )
+    CLIENT = ClientSession(timeout=timeout)
     try:
         yield
     finally:
