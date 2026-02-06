@@ -1,0 +1,13 @@
+[project]
+name = "llm-model-filter"
+version = "0.1.0"
+description = "An OpenAI-compatible API proxy that filters models"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.10.10",
+    "fastapi>=0.115.2",
+    "pydantic>=2.9.2",
+    "pyyaml>=6.0.2",
+    "uvicorn>=0.31.1",
+]
