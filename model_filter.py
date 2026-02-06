@@ -23,12 +23,14 @@ import os
 import re
 from typing import Annotated, Any, AsyncGenerator, List, Optional
 
-from aiohttp import ClientResponse, ClientSession, ClientTimeout
+from aiohttp import ClientResponse, ClientSession, ClientTimeout, TCPConnector
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
 import yaml
+import ssl
+import certifi
 
 
 # Set up logging
@@ -139,11 +141,13 @@ async def setup_teardown(_):
         flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
         RE_FILTERS = [re.compile(p, flags=flags) for p in CONFIG.regexp]
 
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    connector = TCPConnector(ssl=ssl_context)
     timeout = ClientTimeout(
         connect=CONFIG.connection_timeout,
         total=CONFIG.total_timeout if CONFIG.total_timeout is not None else 300,
     )
-    CLIENT = ClientSession(timeout=timeout)
+    CLIENT = ClientSession(connector=connector, timeout=timeout)
     try:
         yield
     finally:
@@ -325,6 +329,8 @@ class SimpleTTLCache:
         self._cache = {}
 
     async def get(self, func, *args, **kwargs):
+        assert CONFIG is not None
+
         # No TTL, don't bother
         if CONFIG.cache_ttl is None:
             return func(*args, **kwargs)
