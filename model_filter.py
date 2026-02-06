@@ -46,6 +46,7 @@ class ModelFilterConfig(BaseModel):
     case_sensitive: Optional[bool] = False
     regexp: Optional[list[str]] = None
     simple: Optional[list[str]] = None
+    default: Optional[str] = None
 
 
 # pydantic models for OpenAI API
@@ -92,12 +93,14 @@ CLIENT: ClientSession | None = None
 CONFIG_PREFIX: str = ""
 SIMPLE_FILTERS: list[str] = []
 RE_FILTERS: list[re.Pattern] = []
+DEFAULT_MODEL: re.Pattern | None = None
 
 
 @asynccontextmanager
 async def setup_teardown(_):
     global CONFIG, CLIENT
     global CONFIG_PREFIX, SIMPLE_FILTERS, RE_FILTERS
+    global DEFAULT_MODEL
 
     config_file = os.getenv("LLM_MF_CONFIG", DEFAULT_CONFIG)
 
@@ -137,9 +140,13 @@ async def setup_teardown(_):
             else [s.lower() for s in CONFIG.simple]
         )
 
+    re_flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
+
     if CONFIG.regexp is not None:
-        flags = 0 if CONFIG.case_sensitive else re.IGNORECASE
-        RE_FILTERS = [re.compile(p, flags=flags) for p in CONFIG.regexp]
+        RE_FILTERS = [re.compile(p, flags=re_flags) for p in CONFIG.regexp]
+
+    if CONFIG.default is not None:
+        DEFAULT_MODEL = re.compile(CONFIG.default, flags=re_flags)
 
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     connector = TCPConnector(ssl=ssl_context)
@@ -401,6 +408,18 @@ async def _list_models(authorization: str | None) -> ListModelsResponse:
     for m in resp_models.data:
         if model_selected(m):
             filtered_models.append(m)
+
+    # If a default is configured...
+    if DEFAULT_MODEL is not None:
+        # Sort the filtered models so we have something predictable
+        sorted_models = sorted(filtered_models, key=lambda m: m.id)
+
+        # Move the first match to the beginning
+        for i, m in enumerate(sorted_models):
+            if DEFAULT_MODEL.fullmatch(m.id):
+                # This is the one
+                filtered_models = [m] + sorted_models[:i] + sorted_models[i+1:]
+                break
 
     return ListModelsResponse(
         object=ObjectList.list,

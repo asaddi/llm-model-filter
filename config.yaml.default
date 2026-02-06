@@ -29,3 +29,7 @@ model_filter:
   # Exact name matching
   simple:
     - "some_other_model"
+
+  # Optional Python regexp of the default model
+  # If matched, it will be the first model in the list.
+  default: ".*gemma3.*"
