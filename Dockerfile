@@ -1,13 +1,20 @@
-FROM python:3.12-slim
+ARG PYTHON_VERSION=3.12-slim
 
-COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /uvx /bin/
+FROM python:$PYTHON_VERSION AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --link-mode=copy
+    uv sync --no-dev --exact --locked --link-mode=copy --compile-bytecode
 
+FROM python:$PYTHON_VERSION
+
+WORKDIR /app
+
+COPY --from=build /app/.venv .venv
 COPY model_filter.py config.yaml.default .
 
 WORKDIR /config
