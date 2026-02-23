@@ -2,7 +2,7 @@ ARG PYTHON_VERSION=3.12-slim
 
 FROM python:$PYTHON_VERSION AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /bin/
 
 WORKDIR /app
 
