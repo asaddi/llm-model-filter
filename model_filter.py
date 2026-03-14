@@ -356,7 +356,7 @@ class SimpleTTLCache:
 
         # No TTL, don't bother
         if CONFIG.cache_ttl is None:
-            return func(*args, **kwargs)
+            return await func(*args, **kwargs)
 
         # Create cache key from args and kwargs
         key = SimpleTTLCache._make_key(args) + SimpleTTLCache._make_key(kwargs)
