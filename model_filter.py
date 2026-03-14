@@ -40,6 +40,7 @@ logger = logging.getLogger("model_filter")
 
 class ModelFilterConfig(BaseModel):
     base_url: str
+    api_key: Optional[str] = None
     cache_ttl: Optional[int] = None
     connection_timeout: Optional[int] = None
     total_timeout: Optional[int] = None
@@ -133,6 +134,15 @@ async def setup_teardown(_):
 
     CONFIG.base_url = CONFIG.base_url.rstrip("/")
 
+    if (value := CONFIG.api_key) is not None:
+        ENV_PREFIX = "os.environ/"
+
+        if value.startswith(ENV_PREFIX):
+            env_var = value[len(ENV_PREFIX) :]
+            value = os.environ[env_var]
+
+        CONFIG.api_key = f"Bearer {value}"
+
     if CONFIG.simple is not None:
         SIMPLE_FILTERS = (
             CONFIG.simple
@@ -189,6 +199,12 @@ def resolve_model(model: str) -> str:
 
 
 def resolve_authorization(authorization: str | None) -> dict | None:
+    assert CONFIG is not None
+
+    if CONFIG.api_key is not None:
+        # Configured API key always overrides anything coming from the client
+        authorization = CONFIG.api_key
+
     return None if authorization is None else {"Authorization": authorization}
 
 
