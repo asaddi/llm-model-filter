@@ -434,7 +434,7 @@ async def _list_models(authorization: str | None) -> ListModelsResponse:
         for i, m in enumerate(sorted_models):
             if DEFAULT_MODEL.fullmatch(m.id):
                 # This is the one
-                filtered_models = [m] + sorted_models[:i] + sorted_models[i+1:]
+                filtered_models = [m] + sorted_models[:i] + sorted_models[i + 1 :]
                 break
 
     return ListModelsResponse(
