@@ -14,7 +14,6 @@
 
 import argparse
 from contextlib import asynccontextmanager
-import datetime
 from enum import Enum
 import logging
 import os
@@ -24,6 +23,7 @@ import re
 from typing import Annotated, Any, AsyncGenerator, List, Optional
 
 from aiohttp import ClientResponse, ClientSession, ClientTimeout, TCPConnector
+from cachetools import TTLCache
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -347,67 +347,6 @@ def model_selected(model: Model) -> bool:
     return False
 
 
-class SimpleTTLCache:
-    def __init__(self):
-        self._cache = {}
-
-    async def get(self, func, *args, **kwargs):
-        assert CONFIG is not None
-
-        # No TTL, don't bother
-        if CONFIG.cache_ttl is None:
-            return await func(*args, **kwargs)
-
-        # Create cache key from args and kwargs
-        key = SimpleTTLCache._make_key(args) + SimpleTTLCache._make_key(kwargs)
-
-        # TODO Calling this every time doesn't scale as the cache grows
-        now = self._expire_items()
-
-        if (item := self._cache.get(key, None)) is None:
-            logger.info(f"Cache miss: {func.__name__}")
-
-            result = await func(*args, **kwargs)
-            item = (result, now)
-            self._cache[key] = item
-        else:
-            logger.info(f"Cache hit: {func.__name__}")
-
-        # Should we bother making a copy?
-        return item[0].copy()
-
-    def _expire_items(self) -> datetime.datetime:
-        assert CONFIG is not None
-
-        # Since CONFIG is global, it actually won't be ready when the cache
-        # initializes. Oh well...
-        ttl = (
-            None
-            if CONFIG.cache_ttl is None
-            else datetime.timedelta(seconds=CONFIG.cache_ttl)
-        )
-
-        now = datetime.datetime.now()
-
-        items = list(self._cache.items())
-        for key, item in items:
-            if (now - item[1]) > ttl:
-                del self._cache[key]
-
-        # Return the same "now" for convenience
-        return now
-
-    @staticmethod
-    def _make_key(obj) -> str:
-        _make_key = SimpleTTLCache._make_key
-        if isinstance(obj, tuple):
-            return str([_make_key(x) for x in obj])
-        elif isinstance(obj, dict):
-            return str([_make_key(kv) for kv in obj.items()])
-        else:
-            return str(obj)
-
-
 async def _list_models(authorization: str | None) -> ListModelsResponse:
     assert CLIENT is not None
 
@@ -443,7 +382,8 @@ async def _list_models(authorization: str | None) -> ListModelsResponse:
     )
 
 
-MODELS_CACHE = SimpleTTLCache()
+# We'll initialize this lazily so we have access to CONFIG
+MODELS_CACHE: TTLCache | None = None
 
 
 @app.get("/v1/models", response_model=ListModelsResponse)
@@ -453,7 +393,27 @@ async def list_models(
     """
     Lists the currently available models, and provides basic information about each one such as the owner and availability.
     """
-    return await MODELS_CACHE.get(_list_models, authorization)
+    assert CONFIG is not None
+
+    global MODELS_CACHE
+    if CONFIG.cache_ttl is not None:
+        if MODELS_CACHE is None:
+            # A TTL is configured and the cache still needs initialization.
+            MODELS_CACHE = TTLCache(maxsize=16, ttl=CONFIG.cache_ttl)
+            logger.debug(f"MODEL_CACHE initialized: {CONFIG.cache_ttl}s")
+        elif authorization in MODELS_CACHE:
+            logger.debug("Cache hit")
+            return MODELS_CACHE[authorization]
+
+        # Fallthrough (cache miss)
+        logger.debug("Cache miss")
+
+    result = await _list_models(authorization)
+
+    if MODELS_CACHE is not None:
+        MODELS_CACHE[authorization] = result
+
+    return result
 
 
 # TODO Do typical frontends use the other model endpoints?
