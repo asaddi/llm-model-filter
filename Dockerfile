@@ -1,10 +1,10 @@
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.13
 ARG UV_VERSION=0.10.12
 
 FROM ghcr.io/astral-sh/uv:$UV_VERSION AS uv
-FROM python:$PYTHON_VERSION AS build
+FROM python:${PYTHON_VERSION}-slim AS build
 
-COPY --from=uv /uv /bin/
+COPY --from=uv /uv /usr/bin/
 
 WORKDIR /app
 
